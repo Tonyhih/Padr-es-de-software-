@@ -187,11 +187,18 @@ app.get('/questionario', (req, res) => {
   // Não é possível mostrar mais perguntas do que as que existem no banco.
   quantas = Math.min(quantas, bancoPerguntas.length);
 
+  // URL de submissão relativo à página: "/questionario" resolve
+  // "questionario/responder" e "/questionario/" resolve "responder"; ambos
+  // chegam a /questionario/responder, mesmo atrás de um prefixo de caminho.
+  const ultimoSegmento = req.path.split('/').pop();
+  const urlResponder = ultimoSegmento ? `${ultimoSegmento}/responder` : 'responder';
+
   res.type('html').send(
     paginaQuestionario({
       activityID: id,
       titulo: eTextoNaoVazio(titulo) ? titulo : TITULO_POR_OMISSAO,
       perguntas: bancoPerguntas.slice(0, quantas).map(paraAluno),
+      urlResponder,
     }),
   );
 });

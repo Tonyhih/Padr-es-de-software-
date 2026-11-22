@@ -93,8 +93,9 @@ function htmlPergunta(pergunta, indice) {
  * @param {string} opcoes.activityID Identificador da atividade.
  * @param {string} opcoes.titulo Título a mostrar.
  * @param {object[]} opcoes.perguntas Perguntas sem a resposta correta.
+ * @param {string} opcoes.urlResponder URL (relativo à página) para onde as respostas são enviadas.
  */
-function paginaQuestionario({ activityID, titulo, perguntas }) {
+function paginaQuestionario({ activityID, titulo, perguntas, urlResponder }) {
   // Os dados passam para o script em JSON; "<" é escapado para não fechar o <script>.
   const dados = JSON.stringify({ activityID, ids: perguntas.map((p) => p.id) }).replace(/</g, '\\u003c');
 
@@ -128,7 +129,7 @@ function paginaQuestionario({ activityID, titulo, perguntas }) {
         botao.disabled = true;
         resultado.textContent = 'A corrigir...';
         try {
-          const resposta = await fetch('questionario/responder', {
+          const resposta = await fetch(${JSON.stringify(urlResponder).replace(/</g, '\\u003c')}, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
