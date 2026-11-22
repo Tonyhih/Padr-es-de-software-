@@ -248,3 +248,32 @@ describe('GET /relatorio', () => {
     assert.equal((await fetch(`${base}/relatorio?id=abc123&aluno=9999`)).status, 404);
   });
 });
+
+// Pontos menores encontrados pela QA de 2026-11-22 (ISSUE-002 a ISSUE-005).
+describe('Mensagens de erro e valores por omissão (QA)', () => {
+  it('ISSUE-002: activityID que não é texto tem mensagem própria', async () => {
+    for (const caminho of ['/analytics', '/questionario/responder']) {
+      const res = await postJson(caminho, { activityID: 123, ids: ['p1'], respostas: ['x'] });
+      assert.equal(res.status, 400);
+      assert.match((await res.json()).erro, /tem de ser um texto/);
+    }
+  });
+
+  it('ISSUE-003: uma pergunta null é rejeitada por não ser um objeto', async () => {
+    const res = await postJson('/questionario/corrigir', { perguntas: [null], respostas: [1] });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).erro, /^Pergunta 1: .*objeto/);
+  });
+
+  it('ISSUE-004: corpo demasiado grande dá 413 com mensagem em português', async () => {
+    const res = await postJson('/analytics', { activityID: 'x'.repeat(200000) });
+    assert.equal(res.status, 413);
+    assert.match((await res.json()).erro, /demasiado grande/);
+  });
+
+  it('ISSUE-005: numPerguntas vazio usa o valor por omissão (5)', async () => {
+    const res = await fetch(`${base}/questionario?id=a&numPerguntas=`);
+    assert.equal(res.status, 200);
+    assert.equal(((await res.text()).match(/<fieldset/g) || []).length, 5);
+  });
+});
