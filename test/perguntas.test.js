@@ -124,3 +124,25 @@ describe('Pergunta (classe base)', () => {
     assert.throws(() => new Pergunta('Enunciado', undefined), ErroPergunta);
   });
 });
+
+describe('Banco de perguntas', () => {
+  const { bancoPerguntas, paraAluno } = require('../banco-perguntas');
+
+  it('todas as perguntas são válidas para o Factory Method', () => {
+    for (const dados of bancoPerguntas) {
+      const pergunta = obterCriador(dados.tipo).criarPergunta(dados);
+      assert.equal(pergunta.verificar(dados.correta), true, dados.id);
+    }
+  });
+
+  it('os identificadores são únicos', () => {
+    const ids = bancoPerguntas.map((p) => p.id);
+    assert.equal(new Set(ids).size, ids.length);
+  });
+
+  it('paraAluno retira a resposta correta', () => {
+    for (const dados of bancoPerguntas) {
+      assert.equal('correta' in paraAluno(dados), false);
+    }
+  });
+});

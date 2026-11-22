@@ -8,7 +8,10 @@ actor "Cliente\n(Inven!RA / aluno)" as Cliente
 
 component "server.js" as Servidor {
   component "Rota\nPOST /questionario/corrigir" as Rota
+  component "Rota\nPOST /questionario/responder" as RotaResponder
 }
+
+component "banco-perguntas.js" as Banco
 
 component "perguntas.js" as Modulo {
   component "Registo de criadores\n(registoCriadores + obterCriador)" as Registo
@@ -33,6 +36,8 @@ component "perguntas.js" as Modulo {
 }
 
 Cliente --> Rota : JSON {perguntas, respostas}
+Cliente --> RotaResponder : JSON {activityID, ids, respostas}
+RotaResponder ..> Banco : obterPergunta(id)
 
 Registo - IObter
 CriadorBase - ICriar
@@ -41,6 +46,9 @@ PerguntaBase - IVerificar
 Rota ..> IObter : usa
 Rota ..> ICriar : usa
 Rota ..> IVerificar : usa
+RotaResponder ..> IObter : usa
+RotaResponder ..> ICriar : usa
+RotaResponder ..> IVerificar : usa
 
 Registo --> CEM : "multipla"
 Registo --> CVF : "vf"
@@ -59,7 +67,7 @@ CVF ..> VF : «cria»
 CRC ..> RC : «cria»
 
 note bottom of Rota
-  A rota só conhece as interfaces
+  As rotas só conhecem as interfaces
   obterCriador, criarPergunta e verificar;
   nunca refere as classes concretas.
 end note

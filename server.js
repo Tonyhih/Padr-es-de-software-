@@ -5,17 +5,24 @@
  *
  * Activity Provider para a plataforma Inven!RA: questionário sobre padrões
  * de projeto. Expõe os endereços que a Inven!RA usa para configurar,
- * instalar (deploy) e obter analytics da atividade, e ainda o endpoint
- * POST /questionario/corrigir, que usa o padrão Factory Method (perguntas.js).
- *
- * Nota: o serviço "Provide activity" (GET /questionario) não está implementado.
+ * instalar (deploy) e obter analytics da atividade, a página do questionário
+ * para o aluno, o relatório do aluno e os endpoints de correção, que usam o
+ * padrão Factory Method (perguntas.js).
  */
 
 const express = require('express');
 const { obterCriador, ErroPergunta } = require('./perguntas');
+const { bancoPerguntas, obterPergunta, paraAluno } = require('./banco-perguntas');
+const { alunosExemplo, obterAlunoExemplo } = require('./dados-exemplo');
+const { paginaConfig, paginaQuestionario, paginaRelatorio, paginaErro } = require('./paginas');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+/** Título do questionário quando a Inven!RA não indica outro. */
+const TITULO_POR_OMISSAO = 'Questionário sobre padrões de projeto';
+/** Número de perguntas quando a Inven!RA não indica outro. */
+const NUM_PERGUNTAS_POR_OMISSAO = 5;
 
 app.disable('x-powered-by');
 
@@ -29,6 +36,11 @@ app.use(express.json());
 /** Responde com o código 400 e uma mensagem de erro em JSON. */
 function erroPedido(res, mensagem) {
   return res.status(400).json({ erro: mensagem });
+}
+
+/** Responde com uma página HTML de erro. */
+function erroPagina(res, estado, titulo, mensagem) {
+  return res.status(estado).type('html').send(paginaErro(titulo, mensagem));
 }
 
 /**
@@ -46,32 +58,39 @@ function eTextoNaoVazio(valor) {
   return typeof valor === 'string' && valor.trim() !== '';
 }
 
+/**
+ * Cria as perguntas a partir dos dados recebidos, usando o Factory Method:
+ * obtém o criador pelo tipo e chama o método fábrica criarPergunta, sem
+ * referir as classes concretas.
+ * @param {object[]} lista Dados das perguntas ({ tipo, enunciado, correta, opcoes }).
+ * @returns {import('./perguntas').Pergunta[]}
+ * @throws {ErroPergunta} Com a posição da pergunta inválida na mensagem.
+ */
+function criarPerguntas(lista) {
+  return lista.map((dados, i) => {
+    try {
+      const tipo = dados !== null && typeof dados === 'object' ? dados.tipo : undefined;
+      return obterCriador(tipo).criarPergunta(dados);
+    } catch (erro) {
+      if (erro instanceof ErroPergunta) {
+        throw new ErroPergunta(`Pergunta ${i + 1}: ${erro.message}`);
+      }
+      throw erro; // Erro inesperado: segue para o tratamento de erros geral.
+    }
+  });
+}
+
+/** Conta quantas respostas estão certas. */
+function contarCertas(perguntas, respostas) {
+  return perguntas.filter((pergunta, i) => pergunta.verificar(respostas[i])).length;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Página de configuração da atividade
 // ---------------------------------------------------------------------------
 
-const PAGINA_CONFIG = `<!DOCTYPE html>
-<html lang="pt-PT">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Configuração do questionário</title>
-</head>
-<body>
-  <h1>Questionário sobre padrões de projeto</h1>
-  <p>
-    <label for="titulo">Título</label><br>
-    <input type="text" id="titulo" name="titulo" value="Padrões de projeto">
-  </p>
-  <p>
-    <label for="numPerguntas">Número de perguntas</label><br>
-    <input type="number" id="numPerguntas" name="numPerguntas" min="1" step="1" value="5">
-  </p>
-</body>
-</html>`;
-
 app.get('/config', (req, res) => {
-  res.type('html').send(PAGINA_CONFIG);
+  res.type('html').send(paginaConfig());
 });
 
 // ---------------------------------------------------------------------------
@@ -125,15 +144,8 @@ app.post('/analytics', (req, res) => {
   const base = obterBaseUrl(req);
   const id = encodeURIComponent(activityID);
 
-  // Dados de exemplo: numa versão real viriam de uma base de dados.
-  const exemplos = [
-    { inveniraStdID: 1001, certas: 4, tempo: 312 },
-    { inveniraStdID: 1002, certas: 2, tempo: 455 },
-    { inveniraStdID: 1003, certas: 5, tempo: 198 },
-  ];
-
   res.json(
-    exemplos.map((aluno) => ({
+    alunosExemplo.map((aluno) => ({
       inveniraStdID: aluno.inveniraStdID,
       quantAnalytics: [
         { name: 'Respostas certas', value: aluno.certas },
@@ -150,9 +162,78 @@ app.post('/analytics', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Correção do questionário (Factory Method)
+// Página do questionário (URL devolvido por /deploy)
 // ---------------------------------------------------------------------------
 
+/**
+ * GET /questionario?id=...[&titulo=...][&numPerguntas=...]
+ * Mostra ao aluno as primeiras numPerguntas perguntas do banco, sem as
+ * respostas corretas.
+ */
+app.get('/questionario', (req, res) => {
+  const { id, titulo, numPerguntas } = req.query;
+
+  if (!eTextoNaoVazio(id)) {
+    return erroPagina(res, 400, 'Pedido inválido', 'O parâmetro "id" da atividade é obrigatório.');
+  }
+
+  let quantas = NUM_PERGUNTAS_POR_OMISSAO;
+  if (numPerguntas !== undefined) {
+    quantas = Number(numPerguntas);
+    if (!Number.isInteger(quantas) || quantas < 1) {
+      return erroPagina(res, 400, 'Pedido inválido', 'O parâmetro "numPerguntas" tem de ser um número inteiro positivo.');
+    }
+  }
+  // Não é possível mostrar mais perguntas do que as que existem no banco.
+  quantas = Math.min(quantas, bancoPerguntas.length);
+
+  res.type('html').send(
+    paginaQuestionario({
+      activityID: id,
+      titulo: eTextoNaoVazio(titulo) ? titulo : TITULO_POR_OMISSAO,
+      perguntas: bancoPerguntas.slice(0, quantas).map(paraAluno),
+    }),
+  );
+});
+
+/**
+ * POST /questionario/responder
+ * Recebe { activityID, ids: [...], respostas: [...], tempo } da página do
+ * questionário. As perguntas vêm do banco do servidor (as soluções nunca
+ * passam pelo browser) e são criadas e corrigidas com o Factory Method.
+ * O campo "tempo" (segundos) é aceite, mas ainda não é guardado.
+ */
+app.post('/questionario/responder', (req, res) => {
+  const { activityID, ids, respostas } = req.body ?? {};
+
+  if (!eTextoNaoVazio(activityID)) {
+    return erroPedido(res, 'O campo "activityID" é obrigatório.');
+  }
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return erroPedido(res, 'O campo "ids" tem de ser uma lista não vazia.');
+  }
+  if (!Array.isArray(respostas) || respostas.length !== ids.length) {
+    return erroPedido(res, 'O campo "respostas" tem de ser uma lista com uma resposta por pergunta.');
+  }
+
+  const dados = [];
+  for (const id of ids) {
+    const pergunta = obterPergunta(id);
+    if (!pergunta) {
+      return erroPedido(res, `Pergunta desconhecida: "${id}".`);
+    }
+    dados.push(pergunta);
+  }
+
+  const perguntas = criarPerguntas(dados);
+  res.json({ certas: contarCertas(perguntas, respostas), total: perguntas.length });
+});
+
+/**
+ * POST /questionario/corrigir
+ * Recebe { perguntas: [{ tipo, enunciado, correta, opcoes }], respostas: [...] }
+ * e devolve { certas, total }.
+ */
 app.post('/questionario/corrigir', (req, res) => {
   const { perguntas, respostas } = req.body ?? {};
 
@@ -167,25 +248,38 @@ app.post('/questionario/corrigir', (req, res) => {
   }
 
   // Cria todas as perguntas antes de corrigir, para validar o pedido inteiro.
-  // O servidor só conhece o criador devolvido pelo registo e o método
-  // fábrica criarPergunta: nunca refere as classes concretas.
-  const criadas = [];
-  for (let i = 0; i < perguntas.length; i++) {
-    const dados = perguntas[i];
-    try {
-      const tipo = dados !== null && typeof dados === 'object' ? dados.tipo : undefined;
-      const criador = obterCriador(tipo);
-      criadas.push(criador.criarPergunta(dados));
-    } catch (erro) {
-      if (erro instanceof ErroPergunta) {
-        return erroPedido(res, `Pergunta ${i + 1}: ${erro.message}`);
-      }
-      throw erro; // Erro inesperado: segue para o tratamento de erros geral.
-    }
+  let criadas;
+  try {
+    criadas = criarPerguntas(perguntas);
+  } catch (erro) {
+    if (erro instanceof ErroPergunta) return erroPedido(res, erro.message);
+    throw erro;
   }
 
-  const certas = criadas.filter((pergunta, i) => pergunta.verificar(respostas[i])).length;
-  res.json({ certas, total: criadas.length });
+  res.json({ certas: contarCertas(criadas, respostas), total: criadas.length });
+});
+
+// ---------------------------------------------------------------------------
+// Relatório do aluno (analytics qualitativa)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /relatorio?id=...&aluno=...
+ * Mostra o relatório de um aluno de exemplo numa atividade.
+ */
+app.get('/relatorio', (req, res) => {
+  const { id, aluno } = req.query;
+
+  if (!eTextoNaoVazio(id) || !eTextoNaoVazio(aluno)) {
+    return erroPagina(res, 400, 'Pedido inválido', 'Os parâmetros "id" e "aluno" são obrigatórios.');
+  }
+
+  const dadosAluno = obterAlunoExemplo(aluno);
+  if (!dadosAluno) {
+    return erroPagina(res, 404, 'Aluno não encontrado', `Não existe relatório para o aluno "${aluno}".`);
+  }
+
+  res.type('html').send(paginaRelatorio({ activityID: id, aluno: dadosAluno }));
 });
 
 // ---------------------------------------------------------------------------

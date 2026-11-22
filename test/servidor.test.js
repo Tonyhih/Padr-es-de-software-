@@ -164,3 +164,87 @@ describe('Endereço inexistente', () => {
     assert.equal(res.status, 404);
   });
 });
+
+describe('GET /questionario', () => {
+  it('mostra as perguntas sem as respostas corretas', async () => {
+    const res = await fetch(`${base}/questionario?id=abc123&numPerguntas=3&titulo=Teste%20%3Cb%3E`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /text\/html/);
+    const html = await res.text();
+    assert.equal((html.match(/<fieldset/g) || []).length, 3);
+    assert.match(html, /Teste &lt;b&gt;/); // o título é escapado
+    assert.doesNotMatch(html, /"correta"/);
+    assert.match(html, /"activityID":"abc123"/);
+  });
+
+  it('usa 5 perguntas por omissão e não passa do tamanho do banco', async () => {
+    const html5 = await (await fetch(`${base}/questionario?id=a`)).text();
+    assert.equal((html5.match(/<fieldset/g) || []).length, 5);
+    const htmlMax = await (await fetch(`${base}/questionario?id=a&numPerguntas=999`)).text();
+    assert.equal((htmlMax.match(/<fieldset/g) || []).length, 10);
+  });
+
+  it('responde 400 sem id ou com numPerguntas inválido', async () => {
+    assert.equal((await fetch(`${base}/questionario`)).status, 400);
+    assert.equal((await fetch(`${base}/questionario?id=a&numPerguntas=0`)).status, 400);
+    assert.equal((await fetch(`${base}/questionario?id=a&numPerguntas=dois`)).status, 400);
+  });
+});
+
+describe('POST /questionario/responder', () => {
+  it('corrige as respostas com as perguntas do banco', async () => {
+    const res = await postJson('/questionario/responder', {
+      activityID: 'abc123',
+      ids: ['p1', 'p2', 'p3', 'p5'],
+      respostas: ['Factory Method', 'verdadeiro', 'observer', 'verdadeiro'],
+      tempo: 42,
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { certas: 3, total: 4 });
+  });
+
+  it('conta perguntas sem resposta como erradas', async () => {
+    const res = await postJson('/questionario/responder', {
+      activityID: 'abc123',
+      ids: ['p1', 'p2'],
+      respostas: [null, null],
+    });
+    assert.deepEqual(await res.json(), { certas: 0, total: 2 });
+  });
+
+  it('responde 400 para pedidos inválidos', async () => {
+    const pedidos = [
+      { ids: ['p1'], respostas: ['x'] },
+      { activityID: 'a', ids: [], respostas: [] },
+      { activityID: 'a', ids: ['p1'], respostas: [] },
+      { activityID: 'a', ids: ['p999'], respostas: ['x'] },
+    ];
+    for (const pedido of pedidos) {
+      assert.equal((await postJson('/questionario/responder', pedido)).status, 400);
+    }
+  });
+});
+
+describe('GET /relatorio', () => {
+  it('mostra o relatório de um aluno de exemplo', async () => {
+    const res = await fetch(`${base}/relatorio?id=abc123&aluno=1001`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /1001/);
+    assert.match(html, /4 de 5/);
+  });
+
+  it('os links das analytics abrem o relatório', async () => {
+    const alunos = await (await postJson('/analytics', { activityID: 'abc 123' })).json();
+    for (const aluno of alunos) {
+      const url = new URL(aluno.qualAnalytics[0].value);
+      const res = await fetch(base + url.pathname + url.search);
+      assert.equal(res.status, 200);
+    }
+  });
+
+  it('responde 400 sem parâmetros e 404 para um aluno desconhecido', async () => {
+    assert.equal((await fetch(`${base}/relatorio?id=abc123`)).status, 400);
+    assert.equal((await fetch(`${base}/relatorio?id=abc123&aluno=9999`)).status, 404);
+  });
+});
