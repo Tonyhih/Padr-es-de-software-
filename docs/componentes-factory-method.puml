@@ -1,0 +1,66 @@
+@startuml componentes-factory-method
+' Diagrama de componentes do padrão Factory Method no Activity Provider.
+title Factory Method - diagrama de componentes
+
+skinparam componentStyle uml2
+
+actor "Cliente\n(Inven!RA / aluno)" as Cliente
+
+component "server.js" as Servidor {
+  component "Rota\nPOST /questionario/corrigir" as Rota
+}
+
+component "perguntas.js" as Modulo {
+  component "Registo de criadores\n(registoCriadores + obterCriador)" as Registo
+
+  component "Criadores" as Criadores {
+    component "CriadorPergunta\n«abstrato»" as CriadorBase
+    component "CriadorEscolhaMultipla" as CEM
+    component "CriadorVerdadeiroFalso" as CVF
+    component "CriadorRespostaCurta" as CRC
+  }
+
+  component "Perguntas (produtos)" as Produtos {
+    component "Pergunta\n«produto»" as PerguntaBase
+    component "EscolhaMultipla" as EM
+    component "VerdadeiroFalso" as VF
+    component "RespostaCurta" as RC
+  }
+
+  interface "obterCriador(tipo)" as IObter
+  interface "criarPergunta(dados)" as ICriar
+  interface "verificar(resposta)" as IVerificar
+}
+
+Cliente --> Rota : JSON {perguntas, respostas}
+
+Registo - IObter
+CriadorBase - ICriar
+PerguntaBase - IVerificar
+
+Rota ..> IObter : usa
+Rota ..> ICriar : usa
+Rota ..> IVerificar : usa
+
+Registo --> CEM : "multipla"
+Registo --> CVF : "vf"
+Registo --> CRC : "curta"
+
+CEM ..|> CriadorBase
+CVF ..|> CriadorBase
+CRC ..|> CriadorBase
+
+EM ..|> PerguntaBase
+VF ..|> PerguntaBase
+RC ..|> PerguntaBase
+
+CEM ..> EM : «cria»
+CVF ..> VF : «cria»
+CRC ..> RC : «cria»
+
+note bottom of Rota
+  A rota só conhece as interfaces
+  obterCriador, criarPergunta e verificar;
+  nunca refere as classes concretas.
+end note
+@enduml

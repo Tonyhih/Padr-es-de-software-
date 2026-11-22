@@ -1,0 +1,45 @@
+@startuml sequencia-corrigir
+' Diagrama de sequência do pedido POST /questionario/corrigir.
+title Factory Method - sequência de POST /questionario/corrigir
+
+actor Cliente
+participant "express.json()" as Parser
+participant "Rota\n/questionario/corrigir" as Rota
+participant "Registo de criadores\n(obterCriador)" as Registo
+participant "criador : CriadorPergunta" as Criador
+participant "pergunta : Pergunta" as Pergunta
+
+Cliente -> Parser : POST /questionario/corrigir\n{ perguntas, respostas }
+alt JSON mal formado
+  Parser --> Cliente : 400 { erro }
+else JSON válido
+  Parser -> Rota : req.body
+  alt perguntas/respostas em falta ou com tamanhos diferentes
+    Rota --> Cliente : 400 { erro }
+  else pedido válido
+    loop para cada dados em perguntas
+      Rota -> Registo : obterCriador(dados.tipo)
+      alt tipo desconhecido
+        Registo --> Rota : lança ErroPergunta
+        Rota --> Cliente : 400 { erro: "Pergunta i: ..." }
+      else tipo conhecido
+        Registo --> Rota : criador concreto
+        Rota -> Criador : criarPergunta(dados)
+        alt dados inválidos
+          Criador --> Rota : lança ErroPergunta
+          Rota --> Cliente : 400 { erro: "Pergunta i: ..." }
+        else dados válidos
+          create Pergunta
+          Criador -> Pergunta : new <subclasse concreta>(...)
+          Criador --> Rota : pergunta
+        end
+      end
+    end
+    loop para cada pergunta criada (índice i)
+      Rota -> Pergunta : verificar(respostas[i])
+      Pergunta --> Rota : true / false
+    end
+    Rota --> Cliente : 200 { certas, total }
+  end
+end
+@enduml

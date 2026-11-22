@@ -1,0 +1,17 @@
+{
+  "name": "inven-ra-questionario-padroes",
+  "version": "1.0.0",
+  "description": "Activity Provider para a plataforma Inven!RA: questionário sobre padrões de projeto (com Factory Method).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
