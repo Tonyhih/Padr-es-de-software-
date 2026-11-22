@@ -10,6 +10,9 @@ correção das perguntas usa o padrão de criação **Factory Method**.
 .
 ├── server.js            # Aplicação Express e endereços da Inven!RA
 ├── perguntas.js         # Factory Method: perguntas, criadores e registo
+├── banco-perguntas.js   # Banco de perguntas do questionário
+├── dados-exemplo.js     # Alunos de exemplo (analytics e relatórios)
+├── paginas.js           # Páginas HTML (configuração, questionário, relatório)
 ├── test/
 │   ├── perguntas.test.js  # Testes do Factory Method
 │   └── servidor.test.js   # Testes dos endpoints
@@ -52,9 +55,27 @@ Exemplo: `BASE_URL=https://meu-ap.onrender.com npm start`
 | GET    | `/deploy?activityID=...`  | Devolve (texto) o URL `BASE_URL/questionario?id=activityID`.              |
 | GET    | `/analytics-list`         | Analytics qualitativas e quantitativas disponíveis.                       |
 | POST   | `/analytics`              | Recebe `{ "activityID": "..." }` e devolve analytics de alunos de exemplo. |
-| POST   | `/questionario/corrigir`  | Corrige um questionário e devolve `{ certas, total }`.                    |
+| GET    | `/questionario?id=...`    | Página do questionário para o aluno (*Provide activity*).                 |
+| POST   | `/questionario/responder` | Corrige as respostas dadas na página do questionário.                     |
+| POST   | `/questionario/corrigir`  | Corrige um questionário enviado por inteiro e devolve `{ certas, total }`. |
+| GET    | `/relatorio?id=...&aluno=...` | Relatório do aluno (o URL das analytics qualitativas).                |
 
-O serviço *Provide activity* (`GET /questionario`) não está implementado.
+### Página do questionário
+
+`GET /questionario?id=abc123` mostra as primeiras perguntas do banco
+(`banco-perguntas.js`). Parâmetros opcionais: `titulo` e `numPerguntas`
+(5 por omissão, no máximo o número de perguntas do banco).
+
+A página não recebe as respostas corretas: envia
+`{ activityID, ids, respostas, tempo }` para `POST /questionario/responder`, que
+vai buscar as perguntas ao banco do servidor e corrige-as com o Factory Method.
+O tempo é enviado, mas ainda não é guardado.
+
+### Relatório do aluno
+
+`GET /relatorio?id=abc123&aluno=1001` mostra as respostas certas e o tempo de um
+aluno. Por agora usa os mesmos alunos de exemplo que `POST /analytics`
+(1001, 1002 e 1003); outros alunos recebem 404.
 
 Pedidos inválidos (parâmetros em falta, JSON mal formado, tipo de pergunta
 desconhecido, dados de pergunta inválidos) recebem a resposta `400` com
@@ -94,7 +115,7 @@ curl -X POST http://localhost:3000/questionario/corrigir \
 
 O registo `registoCriadores` associa os tipos `"multipla"`, `"vf"` e `"curta"`
 ao respetivo criador, e `obterCriador(tipo)` lança um `ErroPergunta` se o tipo
-for desconhecido. A rota `POST /questionario/corrigir` usa apenas
+for desconhecido. As rotas `POST /questionario/corrigir` e `POST /questionario/responder` usam apenas
 `obterCriador(tipo).criarPergunta(dados)` e `pergunta.verificar(resposta)`, sem
 referir classes concretas. Para acrescentar um tipo novo basta criar a pergunta,
 o criador e registá-lo em `perguntas.js`.
@@ -129,6 +150,8 @@ ou com `java -jar plantuml.jar docs/*.puml`.
    - Deploy: `https://meu-ap.onrender.com/deploy`
    - Lista de analytics: `https://meu-ap.onrender.com/analytics-list`
    - Analytics: `https://meu-ap.onrender.com/analytics`
+
+O Render publica a partir do ramo `main`.
 
 No plano gratuito, o serviço adormece após algum tempo sem pedidos, pelo que o
 primeiro pedido pode demorar alguns segundos.
