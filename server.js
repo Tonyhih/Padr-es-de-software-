@@ -59,6 +59,28 @@ function eTextoNaoVazio(valor) {
 }
 
 /**
+ * Valida o campo activityID do corpo de um pedido.
+ * @returns {string|null} Mensagem de erro, ou null se for válido.
+ */
+function erroActivityID(valor) {
+  if (valor === undefined || valor === null || valor === '') {
+    return 'O campo "activityID" é obrigatório.';
+  }
+  if (!eTextoNaoVazio(valor)) {
+    return 'O campo "activityID" tem de ser um texto não vazio.';
+  }
+  return null;
+}
+
+/** Mensagens em português para os erros do leitor de JSON do Express. */
+const MENSAGENS_ERRO_PEDIDO = {
+  'entity.parse.failed': 'O corpo do pedido não é JSON válido.',
+  'entity.too.large': 'O corpo do pedido é demasiado grande.',
+  'charset.unsupported': 'A codificação de caracteres do pedido não é suportada.',
+  'encoding.unsupported': 'A compressão do pedido não é suportada.',
+};
+
+/**
  * Cria as perguntas a partir dos dados recebidos, usando o Factory Method:
  * obtém o criador pelo tipo e chama o método fábrica criarPergunta, sem
  * referir as classes concretas.
@@ -69,8 +91,10 @@ function eTextoNaoVazio(valor) {
 function criarPerguntas(lista) {
   return lista.map((dados, i) => {
     try {
-      const tipo = dados !== null && typeof dados === 'object' ? dados.tipo : undefined;
-      return obterCriador(tipo).criarPergunta(dados);
+      if (dados === null || typeof dados !== 'object' || Array.isArray(dados)) {
+        throw new ErroPergunta('Os dados da pergunta têm de ser um objeto.');
+      }
+      return obterCriador(dados.tipo).criarPergunta(dados);
     } catch (erro) {
       if (erro instanceof ErroPergunta) {
         throw new ErroPergunta(`Pergunta ${i + 1}: ${erro.message}`);
@@ -137,9 +161,8 @@ app.get('/analytics-list', (req, res) => {
 
 app.post('/analytics', (req, res) => {
   const { activityID } = req.body ?? {};
-  if (!eTextoNaoVazio(activityID)) {
-    return erroPedido(res, 'O campo "activityID" é obrigatório.');
-  }
+  const erroId = erroActivityID(activityID);
+  if (erroId) return erroPedido(res, erroId);
 
   const base = obterBaseUrl(req);
   const id = encodeURIComponent(activityID);
@@ -178,7 +201,8 @@ app.get('/questionario', (req, res) => {
   }
 
   let quantas = NUM_PERGUNTAS_POR_OMISSAO;
-  if (numPerguntas !== undefined) {
+  // Sem valor (ausente ou vazio) usa-se o número por omissão.
+  if (numPerguntas !== undefined && numPerguntas !== '') {
     quantas = Number(numPerguntas);
     if (!Number.isInteger(quantas) || quantas < 1) {
       return erroPagina(res, 400, 'Pedido inválido', 'O parâmetro "numPerguntas" tem de ser um número inteiro positivo.');
@@ -213,9 +237,8 @@ app.get('/questionario', (req, res) => {
 app.post('/questionario/responder', (req, res) => {
   const { activityID, ids, respostas } = req.body ?? {};
 
-  if (!eTextoNaoVazio(activityID)) {
-    return erroPedido(res, 'O campo "activityID" é obrigatório.');
-  }
+  const erroId = erroActivityID(activityID);
+  if (erroId) return erroPedido(res, erroId);
   if (!Array.isArray(ids) || ids.length === 0) {
     return erroPedido(res, 'O campo "ids" tem de ser uma lista não vazia.');
   }
@@ -301,12 +324,10 @@ app.use((req, res) => {
 // Erros gerais (por exemplo, JSON mal formado no corpo do pedido).
 // eslint-disable-next-line no-unused-vars
 app.use((erro, req, res, next) => {
-  if (erro.type === 'entity.parse.failed') {
-    return erroPedido(res, 'O corpo do pedido não é JSON válido.');
-  }
   const estado = erro.status || erro.statusCode;
   if (estado >= 400 && estado < 500) {
-    return res.status(estado).json({ erro: erro.message });
+    const mensagem = MENSAGENS_ERRO_PEDIDO[erro.type] || 'Pedido inválido.';
+    return res.status(estado).json({ erro: mensagem });
   }
   console.error(erro);
   res.status(500).json({ erro: 'Erro interno do servidor.' });
